@@ -1,0 +1,312 @@
+repeat task.wait() until game:IsLoaded()
+
+if game.CreatorId ~= 10611639 or game.PlaceId == 8304191830 then return end
+
+pcall(function()
+
+--: Anime Adventures Itzerickx0
+
+repeat task.wait() until workspace:WaitForChild("SERVER_READY").Value == true
+
+--: VARIABLES AND EVERYTHING
+
+local library = loadstring(game:HttpGet("https://raw.githubusercontent.com/bloodball/-back-ups-for-libs/main/sol"))()
+local players = game:GetService("Players")
+local units = workspace._UNITS
+local lp = players.LocalPlayer
+local rs = game:GetService("ReplicatedStorage")
+local run = game:GetService("RunService")
+local c2s = rs:WaitForChild("endpoints").client_to_server
+local services = rs:WaitForChild("src").client.Services
+local placement_service = require(services.PlacementServiceClient)
+local tp = game:GetService("TeleportService")
+local camera = workspace.CurrentCamera
+local unit_data = require(rs.src.Data.Units)
+
+local remote_sell = c2s.sell_unit_ingame
+local remote_place = c2s.spawn_unit
+local remote_upgrade = c2s.upgrade_unit_ingame
+
+local flags = {
+    place_anywhere = true,
+    spawn_esp = false,
+    auto_place_upgrade = false,
+    no_messages = false
+}
+
+local profile_data = { equipped_units = {} }; repeat
+    do
+        for i, v in pairs(getgc(true)) do
+            if type(v) == "table" and rawget(v, "xp") then
+                table.insert(profile_data.equipped_units, v)
+            end
+        end
+    end
+until #profile_data.equipped_units > 0
+
+--: UTILITY FUNCTIONS
+
+local function get_unit_data_by_name(name)
+    for i, v in pairs(unit_data) do
+        if v.name == name then
+            return v
+        end
+    end
+end
+
+local function get_unit_by_name(name)
+    local data = get_unit_data_by_name(name)
+    for i, v in pairs(profile_data.equipped_units) do
+        if v.unit_id == data.id then
+            return v
+        end
+    end
+end
+
+local function sell_all_units()
+    local temp_units = {}
+
+    for i, v in pairs(units:GetChildren()) do
+        if not v:FindFirstChild("_stats") then continue end
+
+        if v._stats.player.Value == lp then
+            table.insert(temp_units, v)
+        end
+    end
+
+    for i, v in pairs(temp_units) do
+        task.delay((#temp_units - i) / 10, function()
+            remote_sell:InvokeServer(v)
+        end)
+    end
+end
+
+local function get_equipped_units()
+    return profile_data.equipped_units
+end
+
+local function get_unit_by_uuid(uuid)
+    for i, v in pairs(get_equipped_units()) do
+        if v.uuid == uuid then
+            return v
+        end
+    end
+end
+
+local function getspawn()
+    if workspace._BASES.pve.LANES:FindFirstChild("1") then
+        return workspace._BASES.pve.LANES["1"].spawn
+    end
+end
+
+local function get_placement_points()
+    if not workspace._BASES.pve.LANES:FindFirstChild("1") then return end
+
+    return {workspace._BASES.pve.LANES["1"]["3"], workspace._BASES.pve.LANES["1"]["6"], workspace._BASES.pve.LANES["1"]["9"]}
+end
+
+local function spawn_unit(uuid, cf)
+    remote_place:InvokeServer(uuid, CFrame.new(cf.Position + Vector3.new(math.random(-5, 5), 0, math.random(-5, 5))))
+end
+
+local function upgrade_unit(unit)
+    remote_upgrade:InvokeServer(unit)
+end
+
+local function go_lobby()
+    tp:Teleport(8304191830, lp)
+end
+
+local function get_unit_data_by_id(id)
+    for i, v in pairs(unit_data) do
+        if v.id == id then
+            return v
+        end
+    end
+end
+
+local function is_unit_max_placement(unit)
+    local u = get_unit_data_by_id(unit.unit_id)
+
+    local temp = {}
+    for i, v in pairs(units:GetChildren()) do
+        if v.Name == unit.unit_id then
+            table.insert(temp, v)
+        end
+    end
+
+    if #temp == u.spawn_cap then
+        return true
+    else
+        return false
+    end
+end
+
+local function has_enough_money_for(unit)
+    local u = get_unit_data_by_id(unit.unit_id)
+
+    local money = lp._stats.resource.Value
+
+    if money >= u.cost then
+        return true
+    else
+        return false
+    end
+end
+
+local function connect(f)
+    task.spawn(function()
+        while task.wait() do
+            f()
+        end
+    end)
+end
+
+--: HACK LOOP
+
+connect(function()
+    if flags.place_anywhere then
+        placement_service.can_place = true
+    end
+end)
+
+local tracer = nil
+connect(function()
+    if flags.spawn_esp then
+        local spawnPart = getspawn()
+        if not spawnPart then return end
+        if spawnPart:FindFirstChildOfClass("Highlight") then return end
+
+        -- tracers, credits to https://www.youtube.com/watch?v=7dVY9lDne1U
+        tracer = Drawing.new("Line")
+        tracer.Visible = true
+        tracer.Color = Color3.fromRGB(200, 0, 200)
+        tracer.Thickness = 1.5
+        tracer.Transparency = 1
+
+        run:BindToRenderStep("traceline", Enum.RenderPriority.Camera.Value, function()
+            local pos, visible = camera:WorldToViewportPoint(spawnPart.Position)
+            if tracer then
+                if visible then
+                    tracer.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
+                    tracer.To = Vector2.new(pos.X, pos.Y)
+                    tracer.Visible = true
+                else
+                    tracer.Visible = false
+                end
+            end
+        end)
+
+        -- chams
+        spawnPart.Transparency = 0
+        local hl = Instance.new("Highlight")
+        hl.DepthMode = 0
+        hl.FillColor = Color3.fromRGB(200, 0, 200)
+        hl.FillTransparency = .5
+        hl.OutlineColor = Color3.fromRGB(200, 0, 200)
+        hl.Parent = spawnPart
+    end
+end)
+
+connect(function()
+    if not flags.spawn_esp then
+        if tracer then
+            tracer.Visible = false
+            run:UnbindFromRenderStep("traceline")
+            tracer:Remove()
+            tracer = nil
+        end
+        local spawnPart = getspawn()
+        if not spawnPart then return end
+        if spawnPart:FindFirstChildOfClass("Highlight") then spawnPart.Highlight:Destroy() end
+    end
+end)
+
+connect(function()
+    if flags.auto_place_upgrade then
+        local units_t = get_equipped_units()
+        local points = get_placement_points()
+
+        for i, v in pairs(points) do
+            for a, unit in pairs(units_t) do
+                local maxed = is_unit_max_placement(unit)
+                local has_money = has_enough_money_for(unit)
+
+                if not maxed and has_money then
+                    spawn_unit(unit.uuid, v.CFrame)
+                end
+            end
+        end
+
+        for i, v in pairs(units:GetChildren()) do
+            if not v:FindFirstChild("_stats") then continue end
+
+            if v._stats.player.Value == lp then
+                
+                upgrade_unit(v)
+            end
+        end
+    end
+end)
+
+connect(function()
+    lp.PlayerGui.MessageGui.Enabled = not flags.no_messages
+end)
+
+connect(function()
+    if workspace._wave_num.Value >= 50 then
+        sell_all_units()
+        task.wait(1)
+        go_lobby()
+    end
+end)
+
+--: UI
+
+local win = library:New {
+    Name = "✨ Anime Adventures (best to use with erwin)",
+    FolderToSave = "kebab-private"
+}
+
+local tab_utility = win:Tab("Utility")  
+local tab_info = win:Tab("Info")
+
+local sec_units = tab_utility:Section("Units")
+local sec_automation = tab_utility:Section("Automation")
+local sec_visual = tab_utility:Section("Visual")
+local sec_other = tab_utility:Section("Other")
+
+local sec_contact = tab_info:Section("Contact (click to copy)")
+local sec_script = tab_info:Section("Script Info")
+local sec_credits = tab_info:Section("Credits")
+
+sec_contact:Button("Discord @ KuyaErickk3239", function()
+    setclipboard("KuyaErickk")
+end)
+sec_contact:Button("V3rm @ 0xDEITY (+rep)", function()
+    setclipboard("https://v3rmillion.net/member.php?action=profile&uid=2291403")
+end)
+
+sec_script:Label("Version: 1.0")
+
+sec_credits:Label("UI Library - Solaris (p.s. lib is clean af appreciate it)")
+sec_credits:Label("Script - Erick")
+
+sec_units:Button("Sell all units (will auto-sell and leave at wave 50)", sell_all_units)
+sec_units:Toggle("Place (almost) anywhere", true, "b_place_anywhere", function(state)
+    flags.place_anywhere = state
+end)
+sec_visual:Toggle("Enemy spawn ESP", false, "b_enemy_esp", function(state)
+    flags.spawn_esp = state
+end)
+sec_visual:Toggle("No messages", false, "b_no_msg", function(state)
+    flags.no_messages = state
+end)
+
+sec_automation:Toggle("Auto place & upgrade", false, "b_auto_place_upgrade", function(state)
+    flags.auto_place_upgrade = state
+end)
+
+sec_other:Button("✌ Go back to lobby", go_lobby)
+
+end)
